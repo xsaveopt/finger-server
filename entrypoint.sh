@@ -8,6 +8,70 @@ if [ ! -s "$USERS_FILE" ]; then
     exit 0
 fi
 
+# validate json definitions before provisioning
+VALIDATION_ERRORS=$(jq -r '
+    def allowed_keys: ["username", "gecos", "shell", "home", "plan"];
+
+    def ensure_string(idx; user; field):
+        if user | has(field) then
+            if (user[field] | type) == "string" then [] else ["Entry \(idx): \(field) must be a string"] end
+        else
+            []
+        end;
+
+    def ensure_known_keys(idx; user):
+        (user | keys_unsorted - allowed_keys) as $unknown
+        | if ($unknown | length) > 0 then ["Entry \(idx): unsupported keys: \($unknown | join(", "))"] else [] end;
+
+    def collect_users:
+        if type == "array" then {users: ., errors: []}
+        elif type == "object" then
+            if has("users") then
+                if (.users | type) == "array" then {users: .users, errors: []}
+                else {users: [], errors: ["Field users must be an array"]}
+                end
+            else
+                {users: [], errors: []}
+            end
+        else
+            {users: [], errors: ["Expected top-level array or object with users array"]}
+        end;
+
+    collect_users as $data
+    | ($data.errors[])
+    , ($data.users
+            | to_entries[]
+            | . as $entry
+            | ($entry.key + 1) as $idx
+            | (if ($entry.value | type) != "object" then
+                        ["Entry \($idx): expected object"]
+                else
+                        ensure_known_keys($idx; $entry.value)
+                        + (if ($entry.value | has("username") | not) then
+                                    ["Entry \($idx): missing username"]
+                            elif ($entry.value.username | type) != "string" then
+                                    ["Entry \($idx): username must be a string"]
+                            elif ($entry.value.username | length) == 0 then
+                                    ["Entry \($idx): username must be non-empty"]
+                            elif ($entry.value.username | test("^[A-Za-z_][A-Za-z0-9_-]*$")) then
+                                    []
+                            else
+                                    ["Entry \($idx): username contains invalid characters"]
+                            end)
+                        + ensure_string($idx; $entry.value; "gecos")
+                        + ensure_string($idx; $entry.value; "shell")
+                        + ensure_string($idx; $entry.value; "home")
+                        + ensure_string($idx; $entry.value; "plan")
+                end)[]
+        )
+' "$USERS_FILE")
+
+if [ -n "$VALIDATION_ERRORS" ]; then
+    echo "Invalid entries in $USERS_FILE:" >&2
+    echo "$VALIDATION_ERRORS" >&2
+    exit 1
+fi
+
 # detect nologin shell
 NOLOGIN_SHELL=$(command -v nologin 2>/dev/null || true)
 if [ -z "$NOLOGIN_SHELL" ]; then
