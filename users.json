@@ -1,0 +1,25 @@
+{
+    "users": [
+        {
+            "username": "root",
+            "gecos": "",
+            "shell": "",
+            "home": "empty",
+            "plan": ""
+        },
+        {
+            "username": "user",
+            "gecos": "User Name",
+            "shell": "cool shell",
+            "home": "a house",
+            "plan": ""
+        },
+        {
+            "username": "user2",
+            "gecos": "firstname lastname",
+            "shell": "less cool shell",
+            "home": "",
+            "plan": "a working plan file"
+        }
+    ]
+}
