@@ -11,7 +11,6 @@ RUN set -xe \
         jq \
         shadow \
         binutils \
-    && strip --strip-all /usr/bin/fingerd /lib/ld-musl-x86_64.so.1 \
     && chmod +x /entrypoint.sh
 
 RUN set -xe \
