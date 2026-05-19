@@ -1,0 +1,18 @@
+# Weekly bumps for the Dockerfile base image and CI actions. No language deps
+# in this repo. Minor + patch updates grouped to keep PR volume low.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-and-patch:
+        update-types: ["minor", "patch"]
