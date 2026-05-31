@@ -1,5 +1,3 @@
-# Weekly bumps for the Dockerfile base image and CI actions. No language deps
-# in this repo. Minor + patch updates grouped to keep PR volume low.
 version: 2
 updates:
   - package-ecosystem: docker
