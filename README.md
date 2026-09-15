@@ -1,57 +1,38 @@
-## Finger Server
+# Finger Server
 
-Minimal finger service that responds with mock finger lookup results sourced from a runtime-provided JSON file.
+Finger Server is a small container that answers finger lookups on port 79 for a set of mock users it reads from a JSON file at startup.
+The entrypoint turns each entry into an account with a home directory and an optional .plan, then deletes the shells, binaries and package database from the container before starting fingerd, so the daemon ends up running in a filesystem that holds little more than itself and the account files.
 
-### users.json layout
-- Build-time usage is optional; the image only requires the file at runtime.
-- Required top-level key: `users`, an array of user records.
-- A record supports the following fields:
-    - `username`: unique identifier exposed in lookups.
-    - `gecos`: optional finger display name.
-    - `shell`: optional string describing the preferred shell.
-    - `home`: optional home-directory display value. See behavior rules below.
-    - `plan`: optional multi-line string rendered when allowed.
-- `home` and `plan` interaction rules:
-    - When `home` has a non-empty string (other than the literal `empty`), the plan text is suppressed.
-    - When `home` is empty (`""`), the plan text is shown in the response.
-    - When `home` equals the literal `"empty"`, the home is hidden in the response and the plan remains hidden as well.
+## Running it
 
-Example:
-```
-{
-    "users": [
-        {
-            "username": "jdoe",
-            "gecos": "Jane Doe",
-            "shell": "bash",
-            "home": "",
-            "plan": "Finish onboarding\nUpdate keys"
-        }
-    ]
-}
+Images are published to ghcr.io/xsaveopt/finger-server, where releases are tagged latest and by version, and every push to master updates the dev tag.
+Mount your users file at /users.json and publish port 79:
+
+```sh
+docker run --rm -p 79:79 -v "$PWD/users.json:/users.json:ro" ghcr.io/xsaveopt/finger-server:latest
 ```
 
-### Build the container image
-1. Ensure the Dockerfile and application sources are present.
-2. Build the image: `docker build -t finger-server:latest .`
+When /users.json is missing or empty the container exits straight away without starting the daemon.
+You can also build the image yourself with docker build from the repo root.
 
-### Run requirements
-- The container expects `users.json` at `/users.json` when it starts. Mount it explicitly:
-    - `docker run --rm -p 79:79 -v "$PWD/users.json":/users.json:ro finger-server:latest`
-- Without the volume, the entrypoint exits immediately.
+## users.json
 
-### Runtime hardening
-- The process starts as root, but the entrypoint immediately prunes all interactive shells, reducing the attack surface even if a shell binary is present.
-- For additional isolation, enable Docker user remapping (`--userns-remap`) so host users map to non-root IDs inside the container.
-- The final structure of the filesystem looks like this:
-```
-/dev
-/etc
-/fingerd
-/home
-/lib
-/proc
-/run
-/sys
-/users.json
-```
+The file holds a users array of entries, and a bare top-level array of the same entries is accepted too.
+The users.json in this repo is a working example.
+
+| Field | Meaning |
+| --- | --- |
+| `username` | Name that finger looks up, required, made of letters, digits, `_` and `-` and starting with a letter or `_` |
+| `gecos` | Full name shown in the lookup |
+| `shell` | Shell shown in the lookup, which can be any text |
+| `home` | Home directory shown in the lookup |
+| `plan` | Text shown as the user's plan, and it can span several lines |
+
+Every entry is checked before any account is created, and a missing username, a value that is not a string or a key outside this table stops the container with an error naming the entry.
+
+Leaving home empty or out gives the user /home/{username}, and the plan is only shown for a home under that path.
+Any other value is displayed as written, while the literal value empty hides the home directory from the lookup altogether.
+
+## License
+
+GPL-2.0, see LICENSE.
