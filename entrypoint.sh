@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-USERS_FILE="/users.json"
+USERS_FILE="${USERS_FILE:-/users.json}"
+PASSWD_FILE="${PASSWD_FILE:-/etc/passwd}"
+HOME_ROOT="${HOME_ROOT:-/home}"
+
 if [ ! -s "$USERS_FILE" ]; then
     echo "No users defined in $USERS_FILE; skipping provisioning." >&2
     exit 0
@@ -88,7 +91,7 @@ fi
 
 UNUMBER=0
 GNUMBER=0
-echo "" > /etc/passwd
+echo "" > "$PASSWD_FILE"
 
 for USER_JSON in "${USERS[@]}"; do
     USERNAME_FIELD=$(jq -r '.username // empty' <<<"$USER_JSON")
@@ -101,14 +104,14 @@ for USER_JSON in "${USERS[@]}"; do
         continue
     fi
 
-    HOME_DIR="${HOME_FIELD:-/home/$USERNAME_FIELD}"
+    HOME_DIR="${HOME_FIELD:-$HOME_ROOT/$USERNAME_FIELD}"
 
     if [ "$HOME_FIELD" == "empty" ]; then
-        echo "$USERNAME_FIELD:*:$UNUMBER:$GNUMBER:$GECOS_FIELD::$SHELL_FIELD" >> /etc/passwd
+        echo "$USERNAME_FIELD:*:$UNUMBER:$GNUMBER:$GECOS_FIELD::$SHELL_FIELD" >> "$PASSWD_FILE"
     else
-        echo "$USERNAME_FIELD:*:$UNUMBER:$GNUMBER:$GECOS_FIELD:$HOME_DIR:$SHELL_FIELD" >> /etc/passwd
+        echo "$USERNAME_FIELD:*:$UNUMBER:$GNUMBER:$GECOS_FIELD:$HOME_DIR:$SHELL_FIELD" >> "$PASSWD_FILE"
 
-        if grep -qE "^$USERNAME_FIELD:.*:/home/$USERNAME_FIELD.*" /etc/passwd; then
+        if grep -qE "^$USERNAME_FIELD:.*:$HOME_ROOT/$USERNAME_FIELD.*" "$PASSWD_FILE"; then
             if ! [ -d "$HOME_DIR" ]; then
                 mkdir -p "$HOME_DIR"
                 chown "$USERNAME_FIELD" "$HOME_DIR"
@@ -126,7 +129,11 @@ for USER_JSON in "${USERS[@]}"; do
     GNUMBER=$((GNUMBER + 1))
 done
 
-cat /etc/passwd
+cat "$PASSWD_FILE"
+
+if [ -n "${PROVISION_ONLY:-}" ]; then
+    exit 0
+fi
 
 cp /usr/bin/fingerd /fingerd
 
