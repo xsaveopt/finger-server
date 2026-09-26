@@ -26,7 +26,7 @@ setup_file() {
 
     rm -rf "$WORK_DIR"
     mkdir -p "$STUB_DIR"
-    printf '#!/bin/sh\nexit 0\n' >"$STUB_DIR/chown"
+    printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>"${CHOWN_LOG:-/dev/null}"\nexit 0\n' >"$STUB_DIR/chown"
     chmod 755 "$STUB_DIR/chown"
 }
 
@@ -39,6 +39,7 @@ teardown_file() {
 setup() {
     CASE_DIR="$WORK_DIR/$BATS_TEST_NAME"
     HOMES="$CASE_DIR/home"
+    export CHOWN_LOG="$CASE_DIR/chown.log"
     rm -rf "$CASE_DIR"
     mkdir -p "$HOMES"
 }
@@ -214,4 +215,70 @@ carol:*:1:1::$HOMES/carol:" >"$CASE_DIR/expected"
     [ "$status" -eq 0 ] || return 1
     printf '\n%s\n' 'dave:*:0:0:::' >"$CASE_DIR/expected"
     cmp "$CASE_DIR/expected" "$CASE_DIR/passwd"
+}
+
+@test "missing home dirs are created and handed to their user" {
+    rm -rf "$HOMES"
+    users_file "$(printf '{"users":[{"username":"alice"},{"username":"bob","home":"%s/bob"}]}' "$HOMES")"
+    run_entrypoint
+
+    [ "$status" -eq 0 ] || return 1
+    [ -d "$HOMES/alice" ] || return 1
+    [ -d "$HOMES/bob" ] || return 1
+    printf '%s\n' "alice $HOMES/alice" "bob $HOMES/bob" >"$CASE_DIR/expected"
+    cmp "$CASE_DIR/expected" "$CHOWN_LOG"
+}
+
+@test "an existing home dir is kept and not chowned" {
+    mkdir -p "$HOMES/alice"
+    printf 'keep\n' >"$HOMES/alice/notes"
+    users_file '{"users":[{"username":"alice","plan":"still here"}]}'
+    run_entrypoint
+
+    [ "$status" -eq 0 ] || return 1
+    [ ! -e "$CHOWN_LOG" ] || return 1
+    [ "$(cat "$HOMES/alice/notes")" = "keep" ] || return 1
+    [ "$(cat "$HOMES/alice/.plan")" = "still here" ] || return 1
+}
+
+@test "a plan is written verbatim with a trailing newline" {
+    users_file '{"users":[{"username":"alice","plan":"first line\n  indented 100% done\\n $(id) `id` $HOME\n"}]}'
+    run_entrypoint
+
+    [ "$status" -eq 0 ] || return 1
+    printf '%s\n' 'first line' '  indented 100% done\n $(id) `id` $HOME' >"$CASE_DIR/expected"
+    cmp "$CASE_DIR/expected" "$HOMES/alice/.plan"
+}
+
+@test "a plan replaces an existing plan file" {
+    mkdir -p "$HOMES/alice"
+    printf 'old plan\nwith a second line\n' >"$HOMES/alice/.plan"
+    users_file '{"users":[{"username":"alice","plan":"new plan"}]}'
+    run_entrypoint
+
+    [ "$status" -eq 0 ] || return 1
+    printf '%s\n' 'new plan' >"$CASE_DIR/expected"
+    cmp "$CASE_DIR/expected" "$HOMES/alice/.plan"
+}
+
+@test "an empty plan creates the home but no plan file" {
+    users_file '{"users":[{"username":"alice","plan":""}]}'
+    run_entrypoint
+
+    [ "$status" -eq 0 ] || return 1
+    [ -d "$HOMES/alice" ] || return 1
+    [ ! -e "$HOMES/alice/.plan" ] || return 1
+    printf '%s\n' "alice $HOMES/alice" >"$CASE_DIR/expected"
+    cmp "$CASE_DIR/expected" "$CHOWN_LOG"
+}
+
+@test "each user gets their own plan" {
+    users_file '{"users":[{"username":"alice","plan":"alice plan"},{"username":"bob"},{"username":"carol","plan":"carol plan"}]}'
+    run_entrypoint
+
+    [ "$status" -eq 0 ] || return 1
+    [ "$(cat "$HOMES/alice/.plan")" = "alice plan" ] || return 1
+    [ -d "$HOMES/bob" ] || return 1
+    [ ! -e "$HOMES/bob/.plan" ] || return 1
+    [ "$(cat "$HOMES/carol/.plan")" = "carol plan" ] || return 1
 }
