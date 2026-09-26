@@ -111,7 +111,7 @@ for USER_JSON in "${USERS[@]}"; do
     else
         echo "$USERNAME_FIELD:*:$UNUMBER:$GNUMBER:$GECOS_FIELD:$HOME_DIR:$SHELL_FIELD" >> "$PASSWD_FILE"
 
-        if grep -qE "^$USERNAME_FIELD:.*:$HOME_ROOT/$USERNAME_FIELD.*" "$PASSWD_FILE"; then
+        if [ "$HOME_DIR" == "$HOME_ROOT/$USERNAME_FIELD" ]; then
             if ! [ -d "$HOME_DIR" ]; then
                 mkdir -p "$HOME_DIR"
                 chown "$USERNAME_FIELD" "$HOME_DIR"
