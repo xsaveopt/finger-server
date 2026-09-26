@@ -282,3 +282,111 @@ carol:*:1:1::$HOMES/carol:" >"$CASE_DIR/expected"
     [ ! -e "$HOMES/bob/.plan" ] || return 1
     [ "$(cat "$HOMES/carol/.plan")" = "carol plan" ] || return 1
 }
+
+@test "a missing users file exits cleanly" {
+    run_entrypoint
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$stderr" == *"No users defined"* ]] || return 1
+    [ ! -e "$CASE_DIR/passwd" ] || return 1
+}
+
+@test "an empty users file exits cleanly" {
+    : >"$CASE_DIR/users.json"
+    run_entrypoint
+
+    [ "$status" -eq 0 ] || return 1
+    [[ "$stderr" == *"No users defined"* ]] || return 1
+    [ ! -e "$CASE_DIR/passwd" ] || return 1
+}
+
+@test "invalid JSON stops provisioning" {
+    users_file '{"users":[{"username":"alice"'
+    run_entrypoint
+
+    [ "$status" -ne 0 ] || return 1
+    [ -n "$stderr" ] || return 1
+    [[ "$stderr" != *"nothing to do"* ]] || return 1
+    [ ! -e "$CASE_DIR/passwd" ] || return 1
+    [ ! -e "$HOMES/alice" ] || return 1
+}
+
+@test "a non-string home or plan stops provisioning" {
+    users_file '{"users":[{"username":"alice","home":5,"plan":["gone fishing"]}]}'
+    run_entrypoint
+
+    [ "$status" -eq 1 ] || return 1
+    [[ "$stderr" == *"Entry 1: home must be a string"* ]] || return 1
+    [[ "$stderr" == *"Entry 1: plan must be a string"* ]] || return 1
+    [ ! -e "$CASE_DIR/passwd" ] || return 1
+}
+
+@test "errors from every entry are reported together" {
+    users_file '{"users":[{"username":"alice","nickname":"al","gecos":1},{"username":"bob"},{"gecos":"no name"},{"username":"carol","home":1}]}'
+    run_entrypoint
+
+    [ "$status" -eq 1 ] || return 1
+    [[ "$stderr" == *"Entry 1: unsupported keys: nickname"* ]] || return 1
+    [[ "$stderr" == *"Entry 1: gecos must be a string"* ]] || return 1
+    [[ "$stderr" != *"Entry 2"* ]] || return 1
+    [[ "$stderr" == *"Entry 3: missing username"* ]] || return 1
+    [[ "$stderr" == *"Entry 4: home must be a string"* ]] || return 1
+    [ ! -e "$CASE_DIR/passwd" ] || return 1
+    [ ! -e "$HOMES/bob" ] || return 1
+}
+
+@test "a custom home that starts with the default home is not given a plan" {
+    users_file "$(printf '{"users":[{"username":"al","home":"%s/alfred","plan":"not shown"}]}' "$HOMES")"
+    run_entrypoint
+
+    [ "$status" -eq 0 ] || return 1
+    printf '\n%s\n' "al:*:0:0::$HOMES/alfred:" >"$CASE_DIR/expected"
+    cmp "$CASE_DIR/expected" "$CASE_DIR/passwd"
+    [ ! -e "$HOMES/alfred" ] || return 1
+    [ ! -e "$CHOWN_LOG" ] || return 1
+}
+
+@test "a custom home with a longer name than the default is not given a plan" {
+    users_file "$(printf '{"users":[{"username":"alice","home":"%s/alice2","plan":"not shown"}]}' "$HOMES")"
+    run_entrypoint
+
+    [ "$status" -eq 0 ] || return 1
+    [ ! -e "$HOMES/alice2" ] || return 1
+    [ ! -e "$CHOWN_LOG" ] || return 1
+}
+
+@test "a duplicate username does not give the second entry's custom home a plan" {
+    users_file "$(printf '{"users":[{"username":"alice","plan":"first plan"},{"username":"alice","home":"%s/elsewhere/alice","plan":"second plan"}]}' "$CASE_DIR")"
+    run_entrypoint
+
+    [ "$status" -eq 0 ] || return 1
+    [ "$(cat "$HOMES/alice/.plan")" = "first plan" ] || return 1
+    [ ! -e "$CASE_DIR/elsewhere" ] || return 1
+    printf '%s\n' "alice $HOMES/alice" >"$CASE_DIR/expected"
+    cmp "$CASE_DIR/expected" "$CHOWN_LOG"
+}
+
+@test "a home root with regex characters is matched literally" {
+    HOMES="$CASE_DIR/home+root"
+    mkdir -p "$HOMES"
+    users_file '{"users":[{"username":"alice","plan":"gone fishing"}]}'
+    run_entrypoint
+
+    [ "$status" -eq 0 ] || return 1
+    [ -d "$HOMES/alice" ] || return 1
+    [ "$(cat "$HOMES/alice/.plan")" = "gone fishing" ] || return 1
+}
+
+@test "the shipped sample users file is provisioned" {
+    cp "$BATS_TEST_DIRNAME/users.json" "$CASE_DIR/users.json"
+    run_entrypoint
+
+    [ "$status" -eq 0 ] || return 1
+    printf '\n%s\n%s\n%s\n' 'root:*:0:0:::' 'user:*:1:1:User Name:a house:cool shell' "user2:*:2:2:firstname lastname:$HOMES/user2:less cool shell" >"$CASE_DIR/expected"
+    cmp "$CASE_DIR/expected" "$CASE_DIR/passwd"
+    [ ! -e "$HOMES/root" ] || return 1
+    [ ! -e "$HOMES/user" ] || return 1
+    [ "$(cat "$HOMES/user2/.plan")" = "a working plan file" ] || return 1
+    printf '%s\n' "user2 $HOMES/user2" >"$CASE_DIR/expected"
+    cmp "$CASE_DIR/expected" "$CHOWN_LOG"
+}
