@@ -26,6 +26,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y bats
       - name: Entrypoint tests
         run: bats entrypoint.bats
+      - name: Container smoke tests
+        run: bats container.bats
 
   docker:
     name: Docker build (no push)
