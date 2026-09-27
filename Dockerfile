@@ -1,10 +1,9 @@
-FROM alpine:edge AS build
+FROM alpine:3.24.2 AS build
 
 COPY . /
 
 RUN set -xe \
     && echo "@testing https://dl-cdn.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories \
-    && apk update \
     && apk add --no-cache \
         bash \
         finger@testing \
