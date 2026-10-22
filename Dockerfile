@@ -1,4 +1,4 @@
-FROM alpine:3.24.2 AS build
+FROM alpine:3.24.3 AS build
 
 COPY . /
 
